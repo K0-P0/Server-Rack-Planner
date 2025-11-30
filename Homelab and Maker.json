@@ -1,0 +1,38 @@
+{
+    "Raspberry Pi 1U Mount (4x Pi)": {
+        "size": 1,
+        "color": "#c2185b",
+        "watts": 40,
+        "weight": 1.5
+    },
+    "Raspberry Pi 2U Cluster (12x Pi)": {
+        "size": 2,
+        "color": "#ad1457",
+        "watts": 100,
+        "weight": 3.5
+    },
+    "Mac Mini Rackmount (2x Units)": {
+        "size": 1,
+        "color": "#cfd8dc",
+        "watts": 150,
+        "weight": 4.0
+    },
+    "Intel NUC Array (3x Units)": {
+        "size": 1,
+        "color": "#1565c0",
+        "watts": 200,
+        "weight": 5.0
+    },
+    "3D Printed SFF Mount": {
+        "size": 2,
+        "color": "#ff5722",
+        "watts": 0,
+        "weight": 0.5
+    },
+    "Gaming PC Case (Rack Mount)": {
+        "size": 4,
+        "color": "#303030",
+        "watts": 650,
+        "weight": 18.0
+    }
+}

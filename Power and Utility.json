@@ -1,0 +1,38 @@
+{
+    "APC Smart-UPS 1500": {
+        "size": 2,
+        "color": "#3e2723",
+        "watts": 50,
+        "weight": 28.0
+    },
+    "APC Extended Battery Pack": {
+        "size": 2,
+        "color": "#4e342e",
+        "watts": 0,
+        "weight": 35.0
+    },
+    "Eaton 5P UPS": {
+        "size": 1,
+        "color": "#263238",
+        "watts": 40,
+        "weight": 15.0
+    },
+    "Tripp Lite PDU (Metered)": {
+        "size": 1,
+        "color": "#212121",
+        "watts": 10,
+        "weight": 3.0
+    },
+    "Rack Drawer (Lockable)": {
+        "size": 2,
+        "color": "#757575",
+        "watts": 0,
+        "weight": 8.0
+    },
+    "Monitor Console (Fold-out)": {
+        "size": 1,
+        "color": "#9e9e9e",
+        "watts": 35,
+        "weight": 12.0
+    }
+}

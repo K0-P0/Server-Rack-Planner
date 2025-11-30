@@ -1,0 +1,44 @@
+{
+    "Dream Machine SE": {
+        "size": 1,
+        "color": "#e0e0e0",
+        "watts": 50,
+        "weight": 4.9
+    },
+    "UNVR (Network Video Recorder)": {
+        "size": 1,
+        "color": "#e0e0e0",
+        "watts": 100,
+        "weight": 5.2
+    },
+    "UNVR Pro (Stackable)": {
+        "size": 2,
+        "color": "#e0e0e0",
+        "watts": 160,
+        "weight": 9.2
+    },
+    "Switch Aggregation (SFP+)": {
+        "size": 1,
+        "color": "#d6d6d6",
+        "watts": 30,
+        "weight": 3.0
+    },
+    "Mission Critical Switch": {
+        "size": 1,
+        "color": "#d6d6d6",
+        "watts": 240,
+        "weight": 5.5
+    },
+    "USW Pro 48 PoE": {
+        "size": 1,
+        "color": "#e0e0e0",
+        "watts": 600,
+        "weight": 6.5
+    },
+    "UXG Pro Gateway": {
+        "size": 1,
+        "color": "#e0e0e0",
+        "watts": 30,
+        "weight": 3.5
+    }
+}

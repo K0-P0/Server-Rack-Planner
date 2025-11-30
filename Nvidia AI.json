@@ -1,0 +1,4 @@
+{
+    "DGX H100": { "size": 8, "color": "#76b900", "watts": 10200, "weight": 130 },
+    "HGX A100 Base": { "size": 4, "color": "#000000", "watts": 6000, "weight": 85 }
+}

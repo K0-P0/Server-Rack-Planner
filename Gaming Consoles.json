@@ -1,0 +1,5 @@
+{
+    "PS5 Rack Mount": { "size": 3, "color": "#eeeeee", "watts": 200, "weight": 4.5 },
+    "Xbox Series X Mount": { "size": 3, "color": "#107c10", "watts": 180, "weight": 4.4 },
+    "Nintendo Switch Shelf": { "size": 2, "color": "#e60012", "watts": 15, "weight": 1.0 }
+}

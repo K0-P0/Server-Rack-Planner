@@ -1,0 +1,38 @@
+{
+    "Home Theater Receiver": {
+        "size": 4,
+        "color": "#000000",
+        "watts": 500,
+        "weight": 14.0
+    },
+    "Multi-Zone Audio Amp": {
+        "size": 2,
+        "color": "#212121",
+        "watts": 800,
+        "weight": 10.0
+    },
+    "XLR Audio Patch Bay": {
+        "size": 1,
+        "color": "#455a64",
+        "watts": 0,
+        "weight": 2.0
+    },
+    "HDMI Matrix Switcher": {
+        "size": 2,
+        "color": "#37474f",
+        "watts": 60,
+        "weight": 4.5
+    },
+    "Sonos / Amp Shelf": {
+        "size": 2,
+        "color": "#424242",
+        "watts": 200,
+        "weight": 6.0
+    },
+    "Cable Box / Apple TV Shelf": {
+        "size": 1,
+        "color": "#333333",
+        "watts": 30,
+        "weight": 1.5
+    }
+}
