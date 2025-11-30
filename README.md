@@ -1,3 +1,26 @@
+List of Changes Made
+
+    Search Bar: Added a filter box above the component library. It updates the list in real-time as you type.
+
+    Front vs. Rear Views: Created a toggle button that switches the rack visualization between "Front" and "Rear".
+
+        Components placed in "Front" do not appear in "Rear" and vice-versa.
+
+        Both views are saved in the project file.
+
+    Category Management:
+
+        Importing a JSON file now creates a new folder in the palette named after the file (e.g., importing Nvidia.json creates a -- Nvidia -- header).
+
+        The "Save Project" feature now saves all imported categories so you don't lose them when you reload the app.
+
+    Power & Weight Logic:
+
+        Added watts and weight properties to all items.
+
+        Added a calculator at the bottom of the UI that sums up the total power and weight for all items in the rack (Front + Rear combined).
+
+    Visual Polish: Added rack-rail mounting holes (circles) to the canvas for a more realistic look.
 RackPlanner App
 
 RackPlanner is a simple desktop application built with Tkinter that allows you to visually plan and organize your server rack components. You can add pre-defined components, create your own custom components, arrange them in a virtual rack, and save/load your configurations.
