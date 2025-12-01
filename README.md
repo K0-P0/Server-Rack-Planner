@@ -56,6 +56,8 @@ Installation
 
         Pillow library: This is required for the "Export to Image" functionality.
 
+        command to install the prerequisites: sudo apt install python3-pil python3-tk
+
     Install Pillow:
     Open your terminal or command prompt and run:
 
