@@ -1,594 +1,920 @@
-#!/usr/bin/env python3
-import tkinter as tk
-from tkinter import messagebox, simpledialog, ttk, filedialog, colorchooser
-import json
-import copy
-import os
-from PIL import ImageGrab, Image
-
-U_HEIGHT = 40
-DEFAULT_U = 12
-RACK_WIDTH_PX = 280
-RACK_LEFT_MARGIN = 30
-RACK_RIGHT_MARGIN = RACK_LEFT_MARGIN + RACK_WIDTH_PX
-PALETTE_WIDTH_PX = 230
-
-class RackPlannerApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("RackPlanner Pro")
-        self.root.configure(bg='#2e2e2e')
-        
-        self.rack_height = DEFAULT_U
-        self.rack_items = [None] * self.rack_height
-        
-        self.views = {
-            "Front": [],
-            "Rear": []
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ServerRack Planner Web</title>
+    <style>
+        :root {
+            --bg-color: #2e2e2e;
+            --panel-color: #3c3c3c;
+            --text-color: #ffffff;
+            --accent-color: #2196f3;
+            --link-color: #64b5f6;
         }
-        self.current_view = "Front"
-        self.placed_components_data = self.views[self.current_view]
 
-        self._dragging_component = None
-        self._drag_start_x = 0
-        self._drag_start_y = 0
-        self._drag_highlight_rects = []
-        self._ghost_rect_id = None
-        self._ghost_text_id = None
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
 
-        self._history = []
-        self._history_index = -1
-        
-        self.search_var = tk.StringVar()
-        self.search_var.trace("w", self.update_palette_filtered)
+        /* --- LAYOUT --- */
+        #palette {
+            width: 260px;
+            background-color: var(--panel-color);
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #555;
+            padding: 15px;
+            transition: background-color 0.3s;
+            position: relative;
+        }
 
-        self.default_categories = {
-            "Networking": {
-                "UDM Pro": {"size": 1, "color": "#FFC107", "watts": 50, "weight": 4},
-                "Router": {"size": 1, "color": "#FFC107", "watts": 30, "weight": 2},
-                "Managed Switch": {"size": 1, "color": "#FFC107", "watts": 60, "weight": 4},
-                "PoE Switch": {"size": 1, "color": "#FFC107", "watts": 350, "weight": 5}
-            },
-            "Servers": {
-                "1U Server": {"size": 1, "color": "#4CAF50", "watts": 250, "weight": 15},
-                "2U Server": {"size": 2, "color": "#4CAF50", "watts": 500, "weight": 25},
-                "4U Server": {"size": 4, "color": "#4CAF50", "watts": 900, "weight": 45}
-            },
-            "Storage": {
-                "Disk Shelf": {"size": 3, "color": "#9E9E9E", "watts": 300, "weight": 30},
-                "NAS Appliance": {"size": 2, "color": "#9E9E9E", "watts": 100, "weight": 10}
-            },
-            "Power": {
-                "UPS": {"size": 2, "color": "#F44336", "watts": 50, "weight": 30},
-                "PDU": {"size": 1, "color": "#F44336", "watts": 0, "weight": 2}
-            },
-            "Accessories": {
-                "Patch Panel": {"size": 1, "color": "#8BC34A", "watts": 0, "weight": 1},
-                "Cable Management": {"size": 1, "color": "#8BC34A", "watts": 0, "weight": 0.5},
-                "2U Shelf": {"size": 2, "color": "#8BC34A", "watts": 0, "weight": 3}
-            },
-            "Cooling": {
-                "Fan Unit": {"size": 1, "color": "#00BCD4", "watts": 40, "weight": 2}
-            },
-            "Custom": {}
+        #palette.highlight {
+            background-color: #3d4c3d;
+            border-right: 2px dashed #4CAF50;
+        }
+        #palette.highlight::after {
+            content: "Drop JSON Files Here";
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-weight: bold;
+            font-size: 1.2em;
+            pointer-events: none;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #main-area {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            overflow-y: auto;
+            padding: 30px;
+            background-color: #1e1e1e;
+        }
+
+        #controls {
+            width: 240px;
+            background-color: var(--panel-color);
+            border-left: 1px solid #555;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* --- PALETTE ITEMS --- */
+        .category-header {
+            color: #4FC3F7;
+            font-weight: 700;
+            margin-top: 20px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+            border-bottom: 1px solid #555;
+            padding-bottom: 4px;
         }
         
-        self.component_categories = copy.deepcopy(self.default_categories)
+        .palette-item {
+            background-color: #505050;
+            padding: 10px;
+            margin-bottom: 6px;
+            border-radius: 6px;
+            cursor: grab;
+            user-select: none;
+            font-size: 0.9em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.1s, background-color 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
 
-        self.setup_ui()
-        self._draw_rack_and_components()
-        self._record_current_state()
+        .palette-item:hover { background-color: #606060; transform: translateX(2px); }
+        .palette-item:active { cursor: grabbing; transform: scale(0.98); }
 
-    def setup_ui(self):
-        main_frame = tk.Frame(self.root, bg='#2e2e2e')
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        #search-bar {
+            background: #2b2b2b;
+            border: 1px solid #555;
+            padding: 10px;
+            color: white;
+            border-radius: 6px;
+            width: 100%;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+            font-size: 0.95em;
+        }
+        #search-bar:focus { outline: 2px solid var(--accent-color); border-color: transparent; }
 
-        palette_frame = tk.Frame(main_frame, bg='#3c3c3c', width=PALETTE_WIDTH_PX)
-        palette_frame.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.Y)
+        /* --- CANVAS --- */
+        #rack-container {
+            position: relative;
+            margin-top: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            background-color: #282828;
+        }
+
+        /* --- BUTTONS --- */
+        button, .btn-link {
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 0.9em;
+            box-sizing: border-box;
+            width: 100%;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        button:hover, .btn-link:hover { filter: brightness(1.15); transform: translateY(-1px); }
+        button:active { transform: translateY(1px); }
         
-        palette_label = tk.Label(palette_frame, text="Library", bg='#3c3c3c', fg='white', font=('Arial', 10, 'bold'))
-        palette_label.pack(pady=(5,2))
+        .btn-purple { background-color: #7E57C2; }
+        .btn-green { background-color: #66BB6A; }
+        .btn-orange { background-color: #FFA726; color: #333; }
+        .btn-red { background-color: #EF5350; }
+        .btn-blue { background-color: #42A5F5; }
+        .btn-dark { background-color: #424242; border: 1px solid #666; }
+        .btn-paypal { background-color: #0070BA; }
 
-        search_frame = tk.Frame(palette_frame, bg='#3c3c3c')
-        search_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
-        tk.Label(search_frame, text="🔍", bg='#3c3c3c', fg='#aaaaaa').pack(side=tk.LEFT)
-        self.search_entry = tk.Entry(search_frame, textvariable=self.search_var, bg='#555555', fg='white', insertbackground='white', relief=tk.FLAT)
-        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        .helper-link {
+            font-size: 0.8em;
+            color: var(--link-color);
+            text-align: center;
+            margin-top: 15px; 
+            margin-bottom: 5px;
+            cursor: pointer;
+            text-decoration: underline;
+            display: block;
+        }
+        .helper-link:hover { color: #90CAF9; }
 
-        self.palette_scrollbar = tk.Scrollbar(palette_frame, orient="vertical")
-        self.palette_scrollbar.pack(side="right", fill="y")
+        /* --- STATS --- */
+        .stats-box {
+            background-color: #252525;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: auto; 
+        }
+        .stat-line { margin: 6px 0; font-size: 0.9em; display: flex; justify-content: space-between; }
 
-        self.palette_canvas = tk.Canvas(palette_frame, bg='#3c3c3c', highlightthickness=0, yscrollcommand=self.palette_scrollbar.set)
-        self.palette_canvas.pack(fill=tk.BOTH, expand=True)
-        self.palette_scrollbar.config(command=self.palette_canvas.yview)
+        /* --- MODALS --- */
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 1000; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            background-color: rgba(0,0,0,0.8); 
+            backdrop-filter: blur(4px);
+        }
+        .modal-content {
+            background-color: #333;
+            margin: 5% auto; 
+            padding: 25px;
+            border: 1px solid #555;
+            width: 500px;
+            max-width: 90%;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            position: relative;
+            animation: modalFadeIn 0.3s;
+        }
+        @keyframes modalFadeIn { from {opacity: 0; transform: translateY(-20px);} to {opacity: 1; transform: translateY(0);} }
+
+        .close-btn {
+            color: #aaa;
+            float: right;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .close-btn:hover { color: white; }
         
-        self.palette_inner_frame = tk.Frame(self.palette_canvas, bg='#3c3c3c')
-        self.palette_canvas.create_window((0, 0), window=self.palette_inner_frame, anchor="nw", width=PALETTE_WIDTH_PX-20)
-        self.palette_inner_frame.bind("<Configure>", lambda e: self.palette_canvas.configure(scrollregion = self.palette_canvas.bbox("all")))
-
-        self.palette_canvas.bind("<Button-4>", self._on_palette_mousewheel)
-        self.palette_canvas.bind("<Button-5>", self._on_palette_mousewheel)
-        self.palette_canvas.bind("<MouseWheel>", self._on_palette_mousewheel)
-
-        canvas_container = tk.Frame(main_frame, bg='#1e1e1e')
-        canvas_container.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-        self.view_label = tk.Label(canvas_container, text=f"Rack View: {self.current_view}", bg='#1e1e1e', fg='#cccccc', font=('Arial', 12, 'bold'))
-        self.view_label.pack(pady=(5,0))
-
-        self.canvas = tk.Canvas(canvas_container, width=RACK_RIGHT_MARGIN + 40, bg='#1e1e1e', highlightthickness=0)
-        self.canvas.pack(pady=10, expand=True)
+        .modal h2 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #555; padding-bottom: 10px; }
+        .modal h3 { color: #eee; margin-bottom: 5px; font-size: 1.1em; }
         
-        self.canvas.bind("<Button-1>", self._start_drag)
-        self.canvas.bind("<B1-Motion>", self._drag_motion)
-        self.canvas.bind("<ButtonRelease-1>", self._drop)
-
-        controls = tk.Frame(main_frame, bg='#2e2e2e', width=200)
-        controls.pack(side=tk.RIGHT, padx=10, pady=10, fill=tk.Y)
-
-        tk.Label(controls, text="Rack Size:", bg='#2e2e2e', fg='white').pack(anchor='w')
-        self.rack_size_var = tk.IntVar(value=DEFAULT_U)
-        size_options = [4, 6, 9, 12, 15, 18, 20, 24, 26, 30, 32, 34, 38, 42, 45, 48]
-        self.rack_size_menu = ttk.Combobox(controls, textvariable=self.rack_size_var, values=size_options, state='readonly')
-        self.rack_size_menu.pack(fill=tk.X, pady=(0, 10))
-        self.rack_size_menu.bind("<<ComboboxSelected>>", self.change_rack_size)
-
-        self.view_btn = tk.Button(controls, text="Switch View (Front/Rear)", command=self.toggle_view, bg='#673AB7', fg='white')
-        self.view_btn.pack(fill=tk.X, pady=(0, 10))
-
-        tk.Button(controls, text="New Custom Item", command=self.add_custom_component, bg='#2196f3', fg='white').pack(fill=tk.X, pady=5)
-        tk.Button(controls, text="Import List as Folder", command=self.import_custom_list, bg='#4CAF50', fg='white').pack(fill=tk.X, pady=2)
+        .modal label { display: block; margin-top: 15px; font-size: 0.9em; color: #ccc; }
+        .modal input[type="text"], .modal input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            background: #222;
+            border: 1px solid #555;
+            color: white;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .modal input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            margin-top: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
         
-        tk.Frame(controls, height=5, bg='#2e2e2e').pack()
+        .modal-actions {
+            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+        }
 
-        tk.Button(controls, text="Clear Current View", command=self.clear_rack, bg='#f44336', fg='white').pack(fill=tk.X, pady=5)
+        .shortcut-list {
+            list-style: none;
+            padding: 0;
+        }
+        .shortcut-list li {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #444;
+        }
+        .shortcut-list li:last-child { border-bottom: none; }
+        .key-badge {
+            background: #555;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+            border: 1px solid #777;
+        }
+
+        .github-box {
+            background: #222;
+            border: 1px solid #444;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            text-align: center;
+        }
+        .github-box p { margin: 0 0 10px 0; color: #ccc; font-size: 0.9em; }
+
+        /* Credits Footer Link */
+        .credits-link {
+            text-align: center; 
+            margin-top: 15px; 
+            font-size: 0.8em; 
+            color: #666;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .credits-link:hover { color: #999; text-decoration: underline; }
+
+    </style>
+</head>
+<body>
+
+    <div id="palette">
+        <h3 style="margin-top:0;">Library</h3>
+        <input type="text" id="search-bar" placeholder="Search components..." oninput="app.filterPalette()">
         
-        undo_redo_frame = tk.Frame(controls, bg='#2e2e2e')
-        undo_redo_frame.pack(fill=tk.X, pady=5)
-        self.undo_btn = tk.Button(undo_redo_frame, text="Undo", command=self.undo, bg='#607D8B', fg='white')
-        self.undo_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
-        self.redo_btn = tk.Button(undo_redo_frame, text="Redo", command=self.redo, bg='#607D8B', fg='white')
-        self.redo_btn.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=(2,0))
+        <div style="font-size:0.8em; color:#888; text-align:center; margin-bottom:15px; margin-top: 5px;">
+            Drag & Drop JSON files here
+        </div>
+        
+        <div id="palette-list" style="overflow-y: auto; flex-grow: 1; padding-right: 5px;"></div>
+    </div>
 
-        tk.Frame(controls, height=5, bg='#2e2e2e').pack()
+    <div id="main-area">
+        <h2 id="view-label" style="color:#ddd; margin-top:0;">Rack View: Front</h2>
+        <div id="rack-container">
+            <canvas id="rackCanvas" width="360" height="600" oncontextmenu="return false;"></canvas>
+        </div>
+    </div>
 
-        tk.Button(controls, text="Save Project", command=self.save_rack_config, bg='#ff9800', fg='white').pack(fill=tk.X, pady=5)
-        tk.Button(controls, text="Load Project", command=self.load_rack_config, bg='#ff9800', fg='white').pack(fill=tk.X, pady=5)
-        tk.Button(controls, text="Export Image", command=self.export_canvas_as_image, bg='#009688', fg='white').pack(fill=tk.X, pady=5)
+    <div id="controls">
+        <div>
+            <label style="font-size:0.85em; color:#aaa; font-weight:bold;">RACK HEIGHT</label>
+            <select id="rack-size-select" onchange="app.resizeRack()" style="width:100%; padding:8px; margin-top:5px; background:#2b2b2b; color:white; border:1px solid #555; border-radius:4px;">
+                <option value="9">9U</option>
+                <option value="12" selected>12U</option>
+                <option value="15">15U</option>
+                <option value="18">18U</option>
+                <option value="20">20U</option>
+                <option value="24">24U</option>
+                <option value="28">28U</option>
+                <option value="30">30U</option>
+                <option value="32">32U</option>
+                <option value="34">34U</option>
+                <option value="38">38U</option>
+                <option value="40">40U</option>
+                <option value="42">42U</option>
+            </select>
+        </div>
 
-        tk.Frame(controls, height=10, bg='#2e2e2e').pack()
+        <button class="btn-purple" onclick="app.toggleView()">Switch View (Front/Rear)</button>
+        
+        <div style="height:1px; background:#444; margin: 5px 0;"></div>
+        
+        <button class="btn-blue" onclick="app.openCreator()">➕ Create Custom Item</button>
+        
+        <div>
+            <button class="btn-green" onclick="document.getElementById('file-input').click()">Import JSON List</button>
+            <div class="helper-link" onclick="window.open('https://github.com/K0-P0/Server-Rack-Planner', '_blank')">
+                Need parts? Get them on GitHub ↗
+            </div>
+        </div>
+        <input type="file" id="file-input" style="display: none;" accept=".json" multiple onchange="app.importCustomList(this)">
+        
+        <button class="btn-orange" onclick="app.saveProject()">Save Project</button>
+        <button class="btn-orange" onclick="document.getElementById('project-input').click()">Load Project</button>
+        <input type="file" id="project-input" style="display: none;" accept=".json" onchange="app.loadProject(this)">
+        
+        <button class="btn-red" onclick="app.clearRack()">Clear Rack</button>
+        
+        <div class="stats-box">
+            <div class="stat-line"><span style="color:#aaa">Used:</span> <span id="stat-used" style="font-weight:bold;">0 U</span></div>
+            <div class="stat-line"><span style="color:#aaa">Power:</span> <span id="stat-power" style="color:#FFD54F; font-weight:bold;">0 W</span></div>
+            <div class="stat-line"><span style="color:#aaa">Weight:</span> <span id="stat-weight" style="color:#81C784; font-weight:bold;">0 kg</span></div>
+        </div>
 
-        stats_frame = tk.LabelFrame(controls, text="Stats", bg='#2e2e2e', fg='white')
-        stats_frame.pack(fill=tk.X, pady=10)
-        self.used_u_label = tk.Label(stats_frame, text="Used: 0", bg='#2e2e2e', fg='white', anchor='w')
-        self.used_u_label.pack(fill=tk.X, padx=5, pady=2)
-        self.power_label = tk.Label(stats_frame, text="Power: 0 W", bg='#2e2e2e', fg='#FFD54F', anchor='w', font=('Arial', 9, 'bold'))
-        self.power_label.pack(fill=tk.X, padx=5, pady=2)
-        self.weight_label = tk.Label(stats_frame, text="Weight: 0 kg", bg='#2e2e2e', fg='#81C784', anchor='w', font=('Arial', 9, 'bold'))
-        self.weight_label.pack(fill=tk.X, padx=5, pady=2)
+        <button class="btn-dark" onclick="app.openHelp()">❓ Help & Shortcuts</button>
+        
+        <div class="credits-link" onclick="app.openAbout()">
+            Built by KOPO
+        </div>
+    </div>
 
-        self.update_palette()
-        self._update_undo_redo_buttons()
-
-    def toggle_view(self):
-        if self.current_view == "Front":
-            self.current_view = "Rear"
-        else:
-            self.current_view = "Front"
-        self.placed_components_data = self.views[self.current_view]
-        self.view_label.config(text=f"Rack View: {self.current_view}")
-        self._draw_rack_and_components()
-
-    def update_palette_filtered(self, *args):
-        self.update_palette()
-
-    def update_palette(self):
-        search_term = self.search_var.get().lower()
-
-        for widget in self.palette_inner_frame.winfo_children():
-            widget.destroy()
-
-        for category_name, category_items in self.component_categories.items():
-            matching_items = {k: v for k, v in category_items.items() if search_term in k.lower()}
+    <div id="createModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="app.closeCreator()">&times;</span>
+            <h2>Create Custom Component</h2>
             
-            if not matching_items and search_term not in category_name.lower():
-                continue
+            <label>Component Name</label>
+            <input type="text" id="new-name" placeholder="e.g. Custom Server">
             
-            items_to_show = matching_items if search_term else category_items
-            if search_term and search_term in category_name.lower():
-                items_to_show = category_items
+            <div style="display:flex; gap:15px;">
+                <div style="flex:1">
+                    <label>Size (U)</label>
+                    <input type="number" id="new-size" value="1" min="1" max="42">
+                </div>
+                <div style="flex:1">
+                    <label>Color</label>
+                    <input type="color" id="new-color" value="#2196f3">
+                </div>
+            </div>
+            
+            <div style="display:flex; gap:15px;">
+                <div style="flex:1">
+                    <label>Power (W)</label>
+                    <input type="number" id="new-watts" value="0">
+                </div>
+                <div style="flex:1">
+                    <label>Weight (kg)</label>
+                    <input type="number" id="new-weight" value="0">
+                </div>
+            </div>
 
-            if items_to_show:
-                header_fg = '#4FC3F7' if category_name not in self.default_categories else 'white'
-                ttk.Label(self.palette_inner_frame, text=f"-- {category_name} --", foreground=header_fg) \
-                    .pack(fill=tk.X, pady=(10,2))
-                
-                for comp_name, comp_info in items_to_show.items():
-                    comp_size = comp_info['size']
-                    comp_color = comp_info['color']
-                    
-                    palette_item_frame = tk.Frame(self.palette_inner_frame, bd=1, relief="solid", bg=comp_color)
-                    palette_item_frame.pack(fill=tk.X, padx=5, pady=2)
-                    
-                    palette_label = tk.Label(palette_item_frame, text=f"{comp_name} ({comp_size}U)", 
-                                             bg=comp_color, fg='black', font=('Arial', 9))
-                    palette_label.pack(side=tk.LEFT, padx=5, pady=2)
+            <div class="modal-actions">
+                <button class="btn-green" onclick="app.saveCustomItem()">Add to Library</button>
+                <button class="btn-purple" onclick="app.exportSingleItem()">Export as JSON</button>
+            </div>
+        </div>
+    </div>
 
-                    handler = lambda e, n=comp_name, s=comp_size, c=comp_color, i=comp_info: \
-                              self._place_component_from_palette(n, s, c, i)
-                    
-                    palette_item_frame.bind("<Button-1>", handler)
-                    palette_label.bind("<Button-1>", handler)
+    <div id="helpModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="app.closeHelp()">&times;</span>
+            <h2>Help & Resources</h2>
+            
+            <div class="github-box">
+                <p>Looking for component lists?</p>
+                <button class="btn-dark" onclick="window.open('https://github.com/K0-P0/Server-Rack-Planner', '_blank')">
+                    🐱 Download JSON Files from GitHub
+                </button>
+            </div>
 
-        self.palette_inner_frame.update_idletasks()
-        self.palette_canvas.configure(scrollregion=self.palette_canvas.bbox("all"))
+            <h3>Controls</h3>
+            <ul class="shortcut-list">
+                <li><span>Move Item</span> <span class="key-badge">Left Click + Drag</span></li>
+                <li><span>Delete Item</span> <span class="key-badge">Right Click</span></li>
+                <li><span>Import Files</span> <span class="key-badge">Drag & Drop JSON</span></li>
+            </ul>
 
-    def _place_component_from_palette(self, comp_name, comp_size, comp_color, comp_info):
-        placed = False
-        self._sync_rack_items()
+            <h3>Tips</h3>
+            <ul style="color:#ccc; font-size:0.9em; padding-left:20px;">
+                <li>You can select multiple files at once when importing.</li>
+                <li>Items in the "Front" view are separate from the "Rear" view.</li>
+                <li>Projects save everything: your rack, your views, and your imported libraries.</li>
+            </ul>
+
+            <div style="margin-top: 20px; text-align: center; border-top: 1px solid #444; padding-top: 15px;">
+                <p style="color:#aaa; font-size:0.9em; margin-bottom:10px;">Find this tool useful?</p>
+                <a href="https://paypal.me/DekodaCaldwell" target="_blank" class="btn-link btn-paypal">
+                    💙 Donate via PayPal
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div id="aboutModal" class="modal">
+        <div class="modal-content" style="text-align:center;">
+            <span class="close-btn" onclick="app.closeAbout()">&times;</span>
+            <h2 style="border:none; margin-bottom:10px;">ServerRack Planner</h2>
+            <p style="font-size:1.1em; color:#ddd;">Built with ❤️ by <strong>KOPO</strong></p>
+            <p style="color:#aaa; font-size:0.9em; margin-bottom:20px;">A lightweight, secure tool for homelab enthusiasts.</p>
+            
+            <button class="btn-dark" style="width:auto; padding:10px 30px;" onclick="window.open('https://github.com/K0-P0', '_blank')">
+                Check out my GitHub
+            </button>
+        </div>
+    </div>
+
+<script>
+/**
+ * RACK PLANNER WEB - Final Polished
+ */
+
+const U_PIXELS = 40;
+const RACK_LEFT_MARGIN = 40;
+const RACK_RIGHT_MARGIN = 320; 
+const CANVAS_WIDTH = 360;
+
+// Default Data
+const defaultCategories = {
+    "Networking": {
+        "UDM Pro": {size: 1, color: "#e0e0e0", watts: 50, weight: 4},
+        "Switch 24 PoE": {size: 1, color: "#e0e0e0", watts: 250, weight: 3},
+        "Patch Panel": {size: 1, color: "#333333", watts: 0, weight: 1}
+    },
+    "Servers": {
+        "Dell R740 (2U)": {size: 2, color: "#212121", watts: 750, weight: 28},
+        "1U Generic Server": {size: 1, color: "#4CAF50", watts: 300, weight: 15}
+    },
+    "Power": {
+        "UPS 1500VA": {size: 2, color: "#3e2723", watts: 50, weight: 25},
+        "PDU": {size: 1, color: "#F44336", watts: 0, weight: 2}
+    },
+    "Custom": {} 
+};
+
+class RackApp {
+    constructor() {
+        this.canvas = document.getElementById('rackCanvas');
+        this.ctx = this.canvas.getContext('2d');
         
-        for start_u_slot in range(1, self.rack_height - comp_size + 2):
-            if self.is_slot_available(start_u_slot, comp_size):
-                new_comp_data = {
-                    'name': comp_name,
-                    'start_u_slot': start_u_slot,
-                    'size_u': comp_size,
-                    'color': comp_color,
-                    'watts': comp_info.get('watts', 0),
-                    'weight': comp_info.get('weight', 0)
+        this.rackHeight = 12; 
+        this.categories = JSON.parse(JSON.stringify(defaultCategories));
+        
+        this.views = { "Front": [], "Rear": [] };
+        this.currentView = "Front";
+        
+        this.isDragging = false;
+        this.draggedItem = null; 
+        
+        this.setupCanvasEvents();
+        this.setupDragAndDrop();
+        this.renderPalette();
+        this.draw();
+
+        window.onclick = (event) => {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = "none";
+            }
+        }
+    }
+
+    draw() {
+        this.canvas.height = this.rackHeight * U_PIXELS;
+        const ctx = this.ctx;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+
+        ctx.fillStyle = "#282828";
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "#444";
+        ctx.fillStyle = "#888";
+        ctx.font = "12px Segoe UI, Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        const labelX = (this.currentView === "Front") ? 20 : 340;
+
+        for (let i = 0; i < this.rackHeight; i++) {
+            let y = i * U_PIXELS;
+            
+            ctx.beginPath(); ctx.moveTo(RACK_LEFT_MARGIN, y); ctx.lineTo(RACK_RIGHT_MARGIN, y); ctx.stroke();
+            let uNum = this.rackHeight - i;
+            ctx.fillText(uNum + "U", labelX, y + U_PIXELS/2);
+
+            ctx.fillStyle = "#111";
+            for(let j=1; j<=3; j++) {
+                let hy = y + (j * U_PIXELS / 4);
+                ctx.beginPath(); ctx.arc(RACK_LEFT_MARGIN + 6, hy, 2, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(RACK_RIGHT_MARGIN - 6, hy, 2, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.fillStyle = "#888"; 
+        }
+
+        ctx.strokeStyle = "#555";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(RACK_LEFT_MARGIN, 0); ctx.lineTo(RACK_LEFT_MARGIN, h);
+        ctx.moveTo(RACK_RIGHT_MARGIN, 0); ctx.lineTo(RACK_RIGHT_MARGIN, h);
+        ctx.stroke();
+
+        this.views[this.currentView].forEach(comp => this.drawComponent(comp));
+
+        if (this.isDragging && this.draggedItem && this.draggedItem.currentSlot) {
+            this.drawGhost(this.draggedItem);
+        }
+
+        this.updateStats();
+    }
+
+    drawComponent(comp) {
+        let topIndex = this.rackHeight - (comp.startU + comp.size - 1);
+        let y = topIndex * U_PIXELS;
+        let height = comp.size * U_PIXELS;
+        let width = RACK_RIGHT_MARGIN - RACK_LEFT_MARGIN;
+
+        this.ctx.fillStyle = comp.color;
+        this.ctx.fillRect(RACK_LEFT_MARGIN + 2, y + 1, width - 4, height - 2);
+        this.ctx.strokeStyle = "#333";
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(RACK_LEFT_MARGIN + 2, y + 1, width - 4, height - 2);
+
+        this.ctx.fillStyle = this.getContrastColor(comp.color);
+        this.ctx.font = "bold 12px Segoe UI, Arial";
+        this.ctx.fillText(comp.name, (RACK_LEFT_MARGIN + RACK_RIGHT_MARGIN)/2, y + height/2);
+    }
+
+    drawGhost(item) {
+        let topIndex = this.rackHeight - (item.currentSlot + item.size - 1);
+        let y = topIndex * U_PIXELS;
+        let height = item.size * U_PIXELS;
+        let width = RACK_RIGHT_MARGIN - RACK_LEFT_MARGIN;
+
+        this.ctx.globalAlpha = 0.5;
+        this.ctx.fillStyle = item.color;
+        this.ctx.fillRect(RACK_LEFT_MARGIN, y, width, height);
+        this.ctx.globalAlpha = 1.0;
+        
+        let isValid = this.checkAvailability(item.currentSlot, item.size);
+        this.ctx.strokeStyle = isValid ? "#00FF00" : "#FF0000";
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(RACK_LEFT_MARGIN, y, width, height);
+    }
+
+    checkAvailability(startU, size) {
+        if(startU < 1) return false;
+        if(startU + size - 1 > this.rackHeight) return false;
+
+        for(let comp of this.views[this.currentView]) {
+            let sA = startU; 
+            let eA = startU + size - 1;
+            let sB = comp.startU; 
+            let eB = comp.startU + comp.size - 1;
+            if(sA <= eB && eA >= sB) return false;
+        }
+        return true;
+    }
+
+    // --- EVENTS ---
+
+    setupCanvasEvents() {
+        this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
+        window.addEventListener('mousemove', (e) => this.onMouseMove(e));
+        window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+    }
+
+    setupDragAndDrop() {
+        const palette = document.getElementById('palette');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            palette.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+        palette.addEventListener('dragover', () => palette.classList.add('highlight'), false);
+        palette.addEventListener('dragleave', () => palette.classList.remove('highlight'), false);
+        palette.addEventListener('drop', (e) => {
+            palette.classList.remove('highlight');
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            this.handleFiles(files);
+        }, false);
+    }
+
+    startDragFromPalette(name, size, color, watts, weight) {
+        this.isDragging = true;
+        this.draggedItem = { 
+            name, size, color, watts, weight, 
+            isNew: true, 
+            currentSlot: null,
+            originalSlot: null
+        };
+    }
+
+    onMouseDown(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        if(x < RACK_LEFT_MARGIN || x > RACK_RIGHT_MARGIN) return;
+
+        const clickedIndex = this.views[this.currentView].findIndex(c => {
+             let topIndex = this.rackHeight - (c.startU + c.size - 1);
+             let cy = topIndex * U_PIXELS;
+             let ch = c.size * U_PIXELS;
+             return (y >= cy && y <= cy + ch);
+        });
+
+        if(clickedIndex !== -1) {
+            const clickedItem = this.views[this.currentView][clickedIndex];
+            if(e.button === 2) { 
+                if(confirm(`Remove ${clickedItem.name}?`)) {
+                    this.views[this.currentView].splice(clickedIndex, 1);
+                    this.draw();
                 }
-                self.placed_components_data.append(new_comp_data)
-                self._render_single_component(new_comp_data)
-                self._sync_rack_items()
-                self.update_stats()
-                self._record_current_state()
-                placed = True
-                break
-        
-        if not placed:
-            messagebox.showerror("No Space", f"Cannot place '{comp_name}' ({comp_size}U). No space available.")
-
-    def _draw_rack_and_components(self):
-        self.canvas.delete("all")
-        self.rack_items = [None] * self.rack_height
-
-        total_h = U_HEIGHT * self.rack_height
-        self.canvas.config(height=total_h)
-
-        self.canvas.create_rectangle(RACK_LEFT_MARGIN, 0, RACK_RIGHT_MARGIN, total_h, fill='#282828', outline='#555555', width=0)
-
-        for i in range(self.rack_height):
-            y = i * U_HEIGHT
-            self.canvas.create_line(RACK_LEFT_MARGIN, y, RACK_RIGHT_MARGIN, y, fill='#444444', width=1)
-            self.canvas.create_text(15, y + U_HEIGHT // 2, anchor='center', fill='#888888', text=f"{self.rack_height - i}")
-            
-            for j in [1, 2, 3]:
-                hole_y = y + (j * U_HEIGHT / 4)
-                self.canvas.create_oval(RACK_LEFT_MARGIN + 5, hole_y - 2, RACK_LEFT_MARGIN + 9, hole_y + 2, fill="#111111", outline="")
-                self.canvas.create_oval(RACK_RIGHT_MARGIN - 9, hole_y - 2, RACK_RIGHT_MARGIN - 5, hole_y + 2, fill="#111111", outline="")
-
-        self.canvas.create_line(RACK_LEFT_MARGIN, 0, RACK_LEFT_MARGIN, total_h, fill='#555555', width=2)
-        self.canvas.create_line(RACK_RIGHT_MARGIN, 0, RACK_RIGHT_MARGIN, total_h, fill='#555555', width=2)
-        self.canvas.create_line(RACK_LEFT_MARGIN, total_h, RACK_RIGHT_MARGIN, total_h, fill='#555555', width=1)
-
-        for comp_data in self.placed_components_data:
-            self._render_single_component(comp_data)
-        
-        self._sync_rack_items()
-        self.update_stats()
-
-    def _render_single_component(self, comp_data):
-        start_index_0_based_top = self.rack_height - (comp_data['start_u_slot'] + comp_data['size_u'] - 1)
-        y1 = start_index_0_based_top * U_HEIGHT
-        y2 = y1 + comp_data['size_u'] * U_HEIGHT
-        
-        color_hex = comp_data.get('color', 'skyblue')
-        
-        if len(color_hex) == 7:
-            r, g, b = int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
-            text_color = 'white' if (0.299*r + 0.587*g + 0.114*b)/255 < 0.5 else 'black'
-        else:
-            text_color = 'black'
-
-        rect = self.canvas.create_rectangle(RACK_LEFT_MARGIN + 2, y1 + 1, RACK_RIGHT_MARGIN - 2, y2 - 1, 
-                                            fill=color_hex, outline='#333333', width=1, tags="component_item")
-        text = self.canvas.create_text(RACK_LEFT_MARGIN + RACK_WIDTH_PX // 2, (y1 + y2) // 2, 
-                                        fill=text_color, font=('Arial', 9, 'bold'), text=comp_data['name'], tags="component_item")
-
-        comp_data['rect_id'] = rect
-        comp_data['text_id'] = text
-
-        self.canvas.tag_bind(rect, '<Button-3>', lambda e, data=comp_data: self.delete_component_on_click(e, data))
-        self.canvas.tag_bind(text, '<Button-3>', lambda e, data=comp_data: self.delete_component_on_click(e, data))
-
-    def _sync_rack_items(self):
-        self.rack_items = [None] * self.rack_height
-        for comp_data in self.placed_components_data:
-            start_index_0_based_top = self.rack_height - (comp_data['start_u_slot'] + comp_data['size_u'] - 1)
-            for i in range(start_index_0_based_top, start_index_0_based_top + comp_data['size_u']):
-                if 0 <= i < self.rack_height:
-                    self.rack_items[i] = comp_data['name']
-
-    def update_stats(self):
-        occupied_slots = set()
-        for comp in self.placed_components_data:
-            start_index_0_based_top = self.rack_height - (comp['start_u_slot'] + comp['size_u'] - 1)
-            for i in range(start_index_0_based_top, start_index_0_based_top + comp['size_u']):
-                if 0 <= i < self.rack_height:
-                    occupied_slots.add(i)
-        
-        self.used_u_label.config(text=f"Used: {len(occupied_slots)}")
-        
-        total_watts = 0
-        total_weight = 0
-        for comp in self.views["Front"] + self.views["Rear"]:
-            total_watts += comp.get('watts', 0)
-            total_weight += comp.get('weight', 0)
-
-        self.power_label.config(text=f"Power: {total_watts} W")
-        self.weight_label.config(text=f"Weight: {total_weight} kg")
-
-    def _record_current_state(self):
-        current_state = {
-            'rack_height': self.rack_height,
-            'views': copy.deepcopy(self.views),
-            'current_view_name': self.current_view
+                return;
+            }
+            if(e.button === 0) { 
+                this.views[this.currentView].splice(clickedIndex, 1);
+                this.isDragging = true;
+                this.draggedItem = {
+                    ...clickedItem,
+                    isNew: false,
+                    originalSlot: clickedItem.startU,
+                    currentSlot: clickedItem.startU
+                };
+                this.draw();
+            }
         }
-        self._history = self._history[:self._history_index + 1]
-        self._history.append(current_state)
-        self._history_index = len(self._history) - 1
-        self._update_undo_redo_buttons()
+    }
 
-    def _load_state_from_history(self, state_data):
-        self.rack_height = state_data['rack_height']
-        self.rack_size_var.set(self.rack_height)
-        self.views = copy.deepcopy(state_data['views'])
-        self.current_view = state_data.get('current_view_name', 'Front')
-        self.placed_components_data = self.views[self.current_view]
-        self.view_label.config(text=f"Rack View: {self.current_view}")
-        self._draw_rack_and_components()
-        self._update_undo_redo_buttons()
+    onMouseMove(e) {
+        if(!this.isDragging) return;
+        const rect = this.canvas.getBoundingClientRect();
+        const y = e.clientY - rect.top;
 
-    def _update_undo_redo_buttons(self):
-        self.undo_btn.config(state=tk.NORMAL if self._history_index > 0 else tk.DISABLED)
-        self.redo_btn.config(state=tk.NORMAL if self._history_index < len(self._history) - 1 else tk.DISABLED)
+        if(y >= 0 && y <= rect.height) {
+            let indexTop = Math.floor(y / U_PIXELS);
+            let potentialStartU = this.rackHeight - (indexTop + this.draggedItem.size - 1);
+            this.draggedItem.currentSlot = potentialStartU;
+            this.draw();
+        } else {
+            this.draggedItem.currentSlot = null;
+            this.draw();
+        }
+    }
 
-    def undo(self):
-        if self._history_index > 0:
-            self._history_index -= 1
-            self._load_state_from_history(self._history[self._history_index])
-    def redo(self):
-        if self._history_index < len(self._history) - 1:
-            self._history_index += 1
-            self._load_state_from_history(self._history[self._history_index])
+    onMouseUp(e) {
+        if(!this.isDragging) return;
+        let dropped = false;
 
-    def _start_drag(self, event):
-        self._dragging_component = None
-        self._clear_highlights()
-        self._clear_ghost()
-
-        if event.widget == self.canvas:
-            closest_item_ids = self.canvas.find_closest(event.x, event.y)
-            if not closest_item_ids: return
-
-            clicked_item_id = closest_item_ids[0]
-            for comp_data in self.placed_components_data:
-                if comp_data.get('rect_id') == clicked_item_id or comp_data.get('text_id') == clicked_item_id:
-                    self._dragging_component = comp_data
-                    
-                    start_index_0_based_top = self.rack_height - (self._dragging_component['start_u_slot'] + self._dragging_component['size_u'] - 1)
-                    for i in range(start_index_0_based_top, start_index_0_based_top + self._dragging_component['size_u']):
-                        if 0 <= i < self.rack_height: self.rack_items[i] = None
-                    
-                    self.canvas.itemconfig(self._dragging_component['rect_id'], state='hidden')
-                    self.canvas.itemconfig(self._dragging_component['text_id'], state='hidden')
-
-                    original_coords = self.canvas.coords(comp_data['rect_id'])
-                    x1, y1, x2, y2 = original_coords
-
-                    self._ghost_rect_id = self.canvas.create_rectangle(x1, y1, x2, y2, fill=self._dragging_component['color'], outline='gray', stipple='gray50', width=2)
-                    self._ghost_text_id = self.canvas.create_text((x1+x2)/2, (y1+y2)/2, fill='black', font=('Arial', 10, 'bold'), text=self._dragging_component['name'])
-                    break
-        
-        if self._dragging_component:
-            self._drag_start_x = event.x 
-            self._drag_start_y = event.y
-
-    def _drag_motion(self, event):
-        if self._dragging_component:
-            self._clear_highlights()
-            target_u = int(event.y / U_HEIGHT)
-            size_u = self._dragging_component['size_u']
-            start_u = self.rack_height - (target_u + size_u - 1)
-            start_u = max(1, min(start_u, self.rack_height - size_u + 1))
-            
-            is_valid = self.is_slot_available(start_u, size_u)
-
-            snapped_top_y = (self.rack_height - (start_u + size_u - 1)) * U_HEIGHT
-            self.canvas.coords(self._ghost_rect_id, RACK_LEFT_MARGIN, snapped_top_y, RACK_RIGHT_MARGIN, snapped_top_y + size_u * U_HEIGHT)
-            self.canvas.coords(self._ghost_text_id, RACK_LEFT_MARGIN + RACK_WIDTH_PX // 2, snapped_top_y + (size_u * U_HEIGHT)/2)
-            self._highlight_slots(start_u, size_u, is_valid)
-
-    def _drop(self, event):
-        if self._dragging_component:
-            if not self._ghost_rect_id:
-                self._cancel_drag()
-                return
-
-            ghost_y = self.canvas.coords(self._ghost_rect_id)[1]
-            size_u = self._dragging_component['size_u']
-            start_u = self.rack_height - (int(ghost_y / U_HEIGHT) + size_u - 1)
-            start_u = max(1, min(start_u, self.rack_height - size_u + 1))
-
-            if self.is_slot_available(start_u, size_u):
-                self._dragging_component['start_u_slot'] = start_u
-                self._draw_rack_and_components()
-                self._record_current_state()
-            else:
-                self._cancel_drag()
-            
-            self._clear_highlights()
-            self._clear_ghost()
-            self._dragging_component = None
-
-    def _cancel_drag(self):
-        if self._dragging_component:
-            self.canvas.itemconfig(self._dragging_component['rect_id'], state='normal')
-            self.canvas.itemconfig(self._dragging_component['text_id'], state='normal')
-            self._sync_rack_items()
-            self._clear_highlights()
-            self._clear_ghost()
-            self._dragging_component = None
-
-    def is_slot_available(self, start_u_slot, size_u):
-        start_index = self.rack_height - (start_u_slot + size_u - 1)
-        if start_index < 0 or start_index + size_u > self.rack_height: return False
-        for i in range(start_index, start_index + size_u):
-            if self.rack_items[i] is not None: return False
-        return True
-    
-    def _highlight_slots(self, start_u_slot, size_u, is_valid):
-        self._clear_highlights()
-        color = '#A5D6A7' if is_valid else '#EF9A9A'
-        start_index = max(0, self.rack_height - (start_u_slot + size_u - 1))
-        end_index = min(self.rack_height, start_index + size_u)
-
-        for i in range(start_index, end_index):
-            y1 = i * U_HEIGHT
-            self._drag_highlight_rects.append(self.canvas.create_rectangle(RACK_LEFT_MARGIN, y1, RACK_RIGHT_MARGIN, y1 + U_HEIGHT, fill=color, stipple='gray50', outline=color))
-        if self._ghost_rect_id: self.canvas.tag_raise(self._ghost_rect_id); self.canvas.tag_raise(self._ghost_text_id)
-
-    def _clear_highlights(self):
-        for rect_id in self._drag_highlight_rects: self.canvas.delete(rect_id)
-        self._drag_highlight_rects = []
-    
-    def _clear_ghost(self):
-        if self._ghost_rect_id: self.canvas.delete(self._ghost_rect_id); self._ghost_rect_id = None
-        if self._ghost_text_id: self.canvas.delete(self._ghost_text_id); self._ghost_text_id = None
-
-    def _on_palette_mousewheel(self, event):
-        if event.num == 4 or event.delta > 0: self.palette_canvas.yview_scroll(-1, "units")
-        elif event.num == 5 or event.delta < 0: self.palette_canvas.yview_scroll(1, "units")
-
-    def add_custom_component(self):
-        name = simpledialog.askstring("New", "Component Name:")
-        if not name: return
-        size = simpledialog.askinteger("New", "Size (U):", minvalue=1, maxvalue=self.rack_height)
-        if not size: return
-        watts = simpledialog.askinteger("New", "Power (W):", minvalue=0, initialvalue=0) or 0
-        weight = simpledialog.askfloat("New", "Weight (kg):", minvalue=0.0, initialvalue=0.0) or 0
-        color = colorchooser.askcolor()[1] or 'skyblue'
-
-        self.component_categories["Custom"][name] = {"size": size, "color": color, "watts": watts, "weight": weight}
-        self.update_palette()
-
-    def import_custom_list(self):
-        file_path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
-        if not file_path: return
-
-        category_name = os.path.splitext(os.path.basename(file_path))[0]
-
-        try:
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            
-            if not isinstance(data, dict):
-                raise ValueError("JSON must be a dictionary.")
-
-            self.component_categories[category_name] = data
-            self.update_palette()
-            messagebox.showinfo("Imported", f"Created new palette folder: {category_name}")
-            
-        except Exception as e:
-            messagebox.showerror("Import Error", f"{e}")
-
-    def save_rack_config(self):
-        file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
-        if not file_path: return
-
-        save_data = {
-            "version": "3.0",
-            "rack_height": self.rack_height,
-            "views": self.views,
-            "component_categories": self.component_categories
+        if(this.draggedItem && this.draggedItem.currentSlot) {
+            const slot = this.draggedItem.currentSlot;
+            const size = this.draggedItem.size;
+            if(this.checkAvailability(slot, size)) {
+                this.views[this.currentView].push({
+                    name: this.draggedItem.name,
+                    size: this.draggedItem.size,
+                    color: this.draggedItem.color,
+                    watts: this.draggedItem.watts,
+                    weight: this.draggedItem.weight,
+                    startU: slot
+                });
+                dropped = true;
+            }
+        }
+        if(!dropped && !this.draggedItem.isNew) {
+            this.views[this.currentView].push({
+                name: this.draggedItem.name,
+                size: this.draggedItem.size,
+                color: this.draggedItem.color,
+                watts: this.draggedItem.watts,
+                weight: this.draggedItem.weight,
+                startU: this.draggedItem.originalSlot
+            });
         }
         
-        for view in save_data['views'].values():
-            for c in view: c.pop('rect_id', None); c.pop('text_id', None)
+        this.isDragging = false;
+        this.draggedItem = null;
+        this.draw();
+    }
 
-        try:
-            with open(file_path, 'w') as f: json.dump(save_data, f, indent=4)
-            messagebox.showinfo("Saved", "Project saved.")
-        except Exception as e: messagebox.showerror("Error", f"{e}")
+    // --- UI HELPERS ---
 
-    def load_rack_config(self):
-        file_path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
-        if not file_path: return
+    renderPalette() {
+        const list = document.getElementById('palette-list');
+        list.innerHTML = "";
+        const search = document.getElementById('search-bar').value.toLowerCase();
 
-        try:
-            with open(file_path, 'r') as f: data = json.load(f)
+        for (const [catName, items] of Object.entries(this.categories)) {
+            if (Object.keys(items).length === 0 && catName !== "Custom") continue; 
 
-            self.rack_height = data.get("rack_height", DEFAULT_U)
-            self.rack_size_var.set(self.rack_height)
-            
-            if "component_categories" in data:
-                self.component_categories = data["component_categories"]
-            else:
-                self.component_categories = copy.deepcopy(self.default_categories)
-                if "custom_components" in data:
-                    self.component_categories["Custom"] = data["custom_components"]
+            const matches = Object.entries(items).filter(([name]) => name.toLowerCase().includes(search));
+            if(matches.length === 0 && catName !== "Custom") continue;
 
-            self.update_palette()
+            const header = document.createElement('div');
+            header.className = 'category-header';
+            header.innerText = catName;
+            list.appendChild(header);
 
-            if "views" in data:
-                self.views = data["views"]
-            else:
-                self.views = {"Front": data.get("placed_components", []), "Rear": []}
-            
-            self.current_view = "Front"
-            self.placed_components_data = self.views[self.current_view]
-            self.view_label.config(text=f"Rack View: {self.current_view}")
-            
-            self._draw_rack_and_components()
-            self._record_current_state()
-            messagebox.showinfo("Loaded", "Project loaded.")
-        except Exception as e: messagebox.showerror("Error", f"{e}")
+            matches.forEach(([name, data]) => {
+                const div = document.createElement('div');
+                div.className = 'palette-item';
+                div.style.borderLeft = `4px solid ${data.color}`;
+                div.innerHTML = `<span>${name}</span> <span>${data.size}U</span>`;
+                div.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); 
+                    this.startDragFromPalette(name, data.size, data.color, data.watts, data.weight);
+                });
+                list.appendChild(div);
+            });
+        }
+    }
 
-    def delete_component_on_click(self, event, component_data):
-        if messagebox.askyesno("Delete", f"Delete '{component_data['name']}'?"):
-            self.canvas.delete(component_data['rect_id'])
-            self.canvas.delete(component_data['text_id'])
-            self.placed_components_data.remove(component_data)
-            self._draw_rack_and_components()
-            self._record_current_state()
+    filterPalette() { this.renderPalette(); }
 
-    def clear_rack(self):
-        if messagebox.askyesno("Clear", f"Clear {self.current_view} view?"):
-            self.placed_components_data.clear()
-            self._draw_rack_and_components()
-            self._record_current_state()
+    toggleView() {
+        this.currentView = (this.currentView === "Front") ? "Rear" : "Front";
+        document.getElementById('view-label').innerText = `Rack View: ${this.currentView}`;
+        this.draw();
+    }
 
-    def change_rack_size(self, event=None):
-        new_height = self.rack_size_var.get()
-        if new_height < self.rack_height:
-             if not messagebox.askyesno("Warning", "Shrinking rack may remove items."):
-                 self.rack_size_var.set(self.rack_height); return
-        self.rack_height = new_height
-        for view in self.views.values():
-            view[:] = [c for c in view if c['start_u_slot'] + c['size_u'] - 1 <= self.rack_height]
-        self._draw_rack_and_components()
-        self._record_current_state()
+    resizeRack() {
+        this.rackHeight = parseInt(document.getElementById('rack-size-select').value);
+        this.draw();
+    }
 
-    def export_canvas_as_image(self):
-        self.canvas.update_idletasks()
-        x = self.root.winfo_x() + self.canvas.winfo_x() + 20
-        y = self.root.winfo_y() + self.canvas.winfo_y() + 50
-        file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG files", "*.png")])
-        if file_path:
-            try: ImageGrab.grab(bbox=(x, y, x + self.canvas.winfo_width(), y + self.canvas.winfo_height())).save(file_path); messagebox.showinfo("Saved", f"Image saved.")
-            except Exception as e: messagebox.showerror("Error", f"{e}")
+    clearRack() {
+        if(confirm("Clear current view?")) {
+            this.views[this.currentView] = [];
+            this.draw();
+        }
+    }
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = RackPlannerApp(root)
-    root.mainloop()
+    updateStats() {
+        let occupied = new Set();
+        this.views[this.currentView].forEach(c => {
+            for(let i=0; i<c.size; i++) occupied.add(c.startU + i);
+        });
+        document.getElementById('stat-used').innerText = `${occupied.size} U`;
+
+        let w = 0, kg = 0;
+        Object.values(this.views).flat().forEach(c => {
+            w += (c.watts || 0);
+            kg += (c.weight || 0);
+        });
+        document.getElementById('stat-power').innerText = `${w} W`;
+        document.getElementById('stat-weight').innerText = `${kg.toFixed(1)} kg`;
+    }
+
+    getContrastColor(hex) {
+        if(!hex) return 'black';
+        hex = hex.replace("#", "");
+        var r = parseInt(hex.substr(0,2),16);
+        var g = parseInt(hex.substr(2,2),16);
+        var b = parseInt(hex.substr(4,2),16);
+        var yiq = ((r*299)+(g*587)+(b*114))/1000;
+        return (yiq >= 128) ? 'black' : 'white';
+    }
+
+    // --- CREATOR ---
+    openCreator() { document.getElementById('createModal').style.display = "block"; }
+    closeCreator() { document.getElementById('createModal').style.display = "none"; }
+
+    saveCustomItem() {
+        const name = document.getElementById('new-name').value.trim();
+        const size = parseInt(document.getElementById('new-size').value);
+        const color = document.getElementById('new-color').value;
+        const watts = parseInt(document.getElementById('new-watts').value) || 0;
+        const weight = parseFloat(document.getElementById('new-weight').value) || 0;
+
+        if(!name) { alert("Please enter a name"); return; }
+        if(!this.categories["Custom"]) this.categories["Custom"] = {};
+
+        this.categories["Custom"][name] = { size, color, watts, weight };
+        this.renderPalette();
+        this.closeCreator();
+        
+        document.getElementById('new-name').value = "";
+        document.getElementById('new-watts').value = 0;
+        document.getElementById('new-weight').value = 0;
+    }
+
+    exportSingleItem() {
+        const name = document.getElementById('new-name').value.trim();
+        if(!name) { alert("Please enter a name to export"); return; }
+        const size = parseInt(document.getElementById('new-size').value);
+        const color = document.getElementById('new-color').value;
+        const watts = parseInt(document.getElementById('new-watts').value) || 0;
+        const weight = parseFloat(document.getElementById('new-weight').value) || 0;
+        const data = { [name]: { size, color, watts, weight } };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${name}.json`;
+        link.click();
+    }
+
+    // --- IMPORT/EXPORT ---
+    importCustomList(input) {
+        const files = input.files;
+        this.handleFiles(files);
+        input.value = ''; 
+    }
+
+    handleFiles(files) {
+        if(!files || files.length === 0) return;
+        let loadedCount = 0;
+        Array.from(files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    const name = file.name.replace(".json", "");
+                    this.categories[name] = json;
+                    loadedCount++;
+                    if(loadedCount === files.length) {
+                        this.renderPalette();
+                    }
+                } catch(err) { console.error("Bad JSON", file.name); }
+            };
+            reader.readAsText(file);
+        });
+    }
+
+    saveProject() {
+        const data = {
+            version: "Web-1.0",
+            rackHeight: this.rackHeight,
+            views: this.views,
+            categories: this.categories
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "my-rack-project.json";
+        link.click();
+    }
+
+    loadProject(input) {
+        const file = input.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                this.rackHeight = data.rackHeight || 12;
+                this.views = data.views || {Front:[], Rear:[]};
+                if(data.categories) this.categories = data.categories;
+                document.getElementById('rack-size-select').value = this.rackHeight;
+                this.currentView = "Front"; 
+                document.getElementById('view-label').innerText = "Rack View: Front";
+                this.renderPalette();
+                this.draw();
+            } catch(err) { alert("Error loading project"); }
+        };
+        reader.readAsText(file);
+    }
+
+    // Modal Logic
+    openHelp() { document.getElementById('helpModal').style.display = "block"; }
+    closeHelp() { document.getElementById('helpModal').style.display = "none"; }
+    openAbout() { document.getElementById('aboutModal').style.display = "block"; }
+    closeAbout() { document.getElementById('aboutModal').style.display = "none"; }
+    openCreator() { document.getElementById('createModal').style.display = "block"; }
+    closeCreator() { document.getElementById('createModal').style.display = "none"; }
+}
+
+try {
+    const app = new RackApp();
+    window.app = app; 
+} catch (e) {
+    alert("Error initializing App: " + e);
+}
+
+</script>
+</body>
+</html>
