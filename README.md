@@ -1,3 +1,5 @@
+ONLY USE TRUSTED .JSON FILES FOR THE APP AND FOR THE WEB CLIENT VERSION!!!
+
 List of Changes Made
 
     Search Bar: Added a filter box above the component library. It updates the list in real-time as you type.
